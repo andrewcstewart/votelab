@@ -1,0 +1,184 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r setup}
+library(tidyverse)
+library(randomNames)
+library(rmutil)
+set.seed(12345)
+```
+
+
+
+Define population centers
+
+```{r}
+city.count <- 100
+city.names <- read_csv("data/random_city_names.csv")$name %>% sample(city.count, replace=FALSE)
+cities <- data.frame(city=city.names,
+                     size = rpareto(city.count, 1, 10),
+                     # size=rpois(n = city.count, lambda = 1)+1,
+                     x=runif(city.count, 1, 100), 
+                     y=runif(city.count, 1, 100))
+
+cities %>% 
+  ggplot(aes(x=x, y=y, color=city, label=city)) + 
+  geom_point(size=1/10) +
+  geom_point(aes(size=size**3, alpha = 1/100), show.legend = FALSE) + guides(color=FALSE)
+  # geom_text(aes(label=city), hjust=1, vjust=1) +
+  # guides(color=FALSE)
+  # theme(legend.direction = "horizontal", 
+  #     legend.position = "bottom",
+  #     legend.box = "horizontal"
+  #     )
+```
+
+Generate population
+
+```{r}
+pop.size <- 5000
+voters <- data.frame(name = randomNames(pop.size),
+                     city = sample(city.names, pop.size, prob=cities$size, replace = TRUE))
+voters
+```
+
+```{r}
+voters %>%
+  left_join(cities) %>%
+  mutate(x = x + rnorm(x, size)*size,
+         y = y + rnorm(y, size)*size) %>%
+  ggplot(aes(x=x, y=y, color=city, label=city)) +
+  geom_point() + guides(color=FALSE)
+```
+
+```{r}
+num.districts <- 5
+df <- voters %>%
+  left_join(cities) %>%
+  mutate(x = x + rnorm(x, size)*size,
+         y = y + rnorm(y, size)*size)
+km1 <- select(df, x,y) %>% kmeans(num.districts)
+df$district <- factor(km1$cluster)
+df %>%
+  ggplot(aes(x=x, y=y, color=district, label=city)) +
+  geom_point()
+```
+
+
+Generate parties
+
+```{r}
+parties <- c("R", "L")
+
+```
+
+Assign political alignment
+
+```{r}
+voters <- voters %>% 
+  mutate(alignment = rnorm(n(),0,30),
+         party = ifelse(alignment > 0, "R", "L")) 
+
+voters %>%
+  ggplot(aes(x=alignment, fill=party)) +
+  geom_histogram()
+
+voters %>%
+  ggplot(aes(x=alignment, fill=party)) +
+  geom_histogram() +
+  facet_wrap(~ city)
+```
+
+Generate candidates
+
+```{r}
+primary.candidates <- voters %>% 
+  group_by(party) %>%
+  sample_n(size = 10)
+primary.candidates
+```
+
+```{r}
+primary.candidates %>%
+  ggplot(aes(x=alignment, fill=party)) +
+  geom_histogram()
+```
+
+```{r}
+voters %>%
+  ggplot(aes(x=alignment, fill=party)) +
+  geom_histogram() +
+  geom_vline(xintercept = primary.candidates$alignment)
+```
+
+
+## Primary election
+
+Calculate voter preference
+
+```{r}
+train <- data.frame(a=primary.candidates$alignment, b=primary.candidates$alignment)
+test <- data.frame(a=voters$alignment, b=voters$alignment)
+cl <- factor(primary.candidates$name)
+m1 <- knn(train, test, cl, k=5, prob=TRUE)
+
+voters$preference <- m1
+voters$preference %>% table
+```
+
+Tally votes
+
+```{r}
+general.candidates <- voters %>% 
+  group_by(preference) %>%
+  count() %>%
+  left_join(primary.candidates, by = c("preference"="name")) %>%
+  rename(name=preference, votes=n) %>%
+  group_by(party) %>%
+  slice(which.max(votes))
+general.candidates
+```
+
+```{r}
+voters %>%
+  ggplot(aes(x=alignment, fill=party)) +
+  geom_histogram() +
+  # geom_vline(xintercept = general.candidates$alignment) +
+  geom_point(data = general.candidates,
+             aes(x=alignment, y=votes))
+
+```
+
+
+## General election
+
+
+```{r}
+train <- data.frame(a=general.candidates$alignment, b=general.candidates$alignment)
+test <- data.frame(a=voters$alignment, b=voters$alignment)
+cl <- factor(general.candidates$name)
+m2 <- knn(train, test, cl, k=2, prob=TRUE)
+
+voters$preference <- m2
+voters$preference %>% table
+```
+
+```{r}
+election.winner <- voters %>% 
+  group_by(preference) %>%
+  count() %>%
+  left_join(general.candidates, by = c("preference"="name")) %>%
+  rename(name=preference, votes=n) %>%
+  group_by() %>%
+  slice(which.max(votes))
+election.winner
+```
+```{r}
+voters %>%
+  ggplot(aes(x=alignment, fill=party)) +
+  geom_histogram() +
+  geom_vline(xintercept = election.winner$alignment)
+```
+

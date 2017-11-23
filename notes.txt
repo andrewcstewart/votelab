@@ -1,0 +1,4 @@
+* https://www.r-bloggers.com/create-maps-with-maptools-r-package/
+* http://www.mithrilandmages.com/utilities/CityNames.php
+* http://svds.com/gerrymandering/
+* https://github.com/r-barnes/mandeR
